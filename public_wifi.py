@@ -52,8 +52,8 @@ conn_params = ('Driver={ODBC Driver 17 for SQL Server};'  # This will require ad
                       r'Server=GISSQL2019SDE;'
                       'Database=CA_Addresses;'
                       #'Trusted_Connection=yes;'  #Only if you are using a AD account.
-                      r'UID=sa;'  # Comment out if you are using AD authentication.
-                      r'PWD=Tal35923!@'     # Comment out if you are using AD authentication.
+                      r'UID=YourUserName;'  # Comment out if you are using AD authentication.
+                      r'PWD=YourPassword'     # Comment out if you are using AD authentication.
                       )
 
 # Database Cache Table
