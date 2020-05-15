@@ -508,5 +508,5 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=None) as executor:
     executor.map(process_address, city_search)
 
 pushToAGOL()
-aisle6Cleanup()
+#aisle6Cleanup()
 deleteTable()
