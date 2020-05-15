@@ -4,10 +4,10 @@
 #           open Wi-Fi access points.  It will require a listing of known
 #           addresses that can act as a seed value when performing the extraction.
 #
-# Author:      John Spence
+# Author:      John Spence, Spatial Data Administrator, City of Bellevue
 #
 # Created:  4/9/2020
-# Modified:  4/29/2020
+# Modified:  5/14/2020
 # Modification Purpose:  Code cleanup.
 #
 #
@@ -20,44 +20,55 @@
 #
 # 888888888888888888888888888888888888888888888888888888888888888888888888888888
 
-# Comcast Search Parameters:
+# Comcast Search Parameter:
 global city_search
-city_search = 'Bellevue'
+city_search = 'San Francisco'
 filter_search = '' #leave this one blank
-topLeftLat = '47.666623'  #Top left of your search
-topLeftLong = '-122.236483' #Top left of your search
-bottomRightLat = '47.531808' #Bottom right of your search
-bottomLeftLong = '-122.084008' #Bottom right of your search
+topLeftLat = '38.798559'  #Top left of your search
+topLeftLong = '-121.830453' #Top left of your search
+bottomRightLat = '38.368839' #Bottom right of your search
+bottomLeftLong = '-121.260018' #Bottom right of your search
 
 # ArcGIS Online Portal
 AGOL_Portal = ''  #If blank, it will search for the active portal from your ArcGIS//Pro install
 
 # ArcGIS Online Credentials
-AGOL_User = 'UserName'
-AGOL_Pass = 'Password'
+AGOL_User = ''
+AGOL_Pass = ''
 
 # Targeted Service & layer for Data
-service_URL = 'https://services1.arcgis.com/yourservicehere'
+service_URL = 'https://services3.arcgis.com/uknczv4rpevve42E/arcgis/rest/services/Wireless_Access_Points/FeatureServer/0/'
 
 # Use local address database
 local_address_db = 1
-city_add = 'Bellevue'
-state_add = 'WA'
+city_add = 'San Francisco'
+state_add = 'CA'
 
 # Initial Loading
 initial_load = 0
 
 # PyODBC confifguration
 conn_params = ('Driver={ODBC Driver 17 for SQL Server};'  # This will require adjustment if you are using a different database.
-                      r'Server=YourServer;'
-                      'Database=YourDatabase;'
-                      'Trusted_Connection=yes;'  #Only if you are using a AD account.
-#                      r'UID=YourUserName;'  # Comment out if you are using AD authentication.
-#                      r'PWD=YourPassword'     # Comment out if you are using AD authentication.
+                      r'Server=GISSQL2019SDE;'
+                      'Database=CA_Addresses;'
+                      #'Trusted_Connection=yes;'  #Only if you are using a AD account.
+                      r'UID=sa;'  # Comment out if you are using AD authentication.
+                      r'PWD=Tal35923!@'     # Comment out if you are using AD authentication.
                       )
 
 # Database Cache Table
-db_table = '[ITD].[WiFi_Temp]'
+db_table = '[dbo].[WiFi_Temp]'
+
+# Reserved
+Reserved = []
+
+# Check Ride
+global checkRide
+checkRide = []
+
+# Address Count
+global checkCount
+checkCount = 0
 
 # ------------------------------------------------------------------------------
 # DO NOT UPDATE BELOW THIS LINE OR RISK DOOM AND DISPAIR!  Have a nice day!
@@ -68,6 +79,7 @@ import urllib.request
 import json
 import pyodbc
 import concurrent.futures
+import datetime
 
 #-------------------------------------------------------------------------------
 #
@@ -150,39 +162,43 @@ def checkIn_DB(payload_json):
         Latitude = item[6]
         Longitude = item[5]
 
-        #Insert the address and status into the database.
-        update_string = ('''
-            insert into {}(
-                [APOwner]
-                ,[Street]
-                ,[City]
-                ,[Zip]
-                ,[LocationType]
-                ,[SSID]
-                ,[ID1]
-                ,[ID2]
-                ,[Latitude]
-                ,[Longitude]
-                ,[Created])
-            values (
-            '{}'
-            ,'{}'
-            ,'{}'
-            ,'{}'
-            ,'{}'
-            ,'{}'
-            ,'{}'
-            ,'{}'
-            ,'{}'
-            ,'{}'
-            , getdate()
-            )''').format(db_table, APOwner, Street, City, Zip, LocationType, SSID, ID1, ID2, Latitude, Longitude)
-        update_cursor.execute(update_string)
-        update_conn.commit()
-        update_cursor.close()
-        update_conn.close()
-        print ('Added...{}'.format(insert_count))
-        insert_count += 1
+        if ID1 not in checkRide:
+            checkRide.append(ID1)
+            #Insert the address and status into the database.
+            update_string = ('''
+                insert into {}(
+                    [APOwner]
+                    ,[Street]
+                    ,[City]
+                    ,[Zip]
+                    ,[LocationType]
+                    ,[SSID]
+                    ,[ID1]
+                    ,[ID2]
+                    ,[Latitude]
+                    ,[Longitude]
+                    ,[Created])
+                values (
+                '{}'
+                ,'{}'
+                ,'{}'
+                ,'{}'
+                ,'{}'
+                ,'{}'
+                ,'{}'
+                ,'{}'
+                ,'{}'
+                ,'{}'
+                , getdate()
+                )''').format(db_table, APOwner, Street, City, Zip, LocationType, SSID, ID1, ID2, Latitude, Longitude)
+            update_cursor.execute(update_string)
+            update_conn.commit()
+            update_cursor.close()
+            update_conn.close()
+            print ('Added...{}'.format(insert_count))
+            insert_count += 1
+        #else:
+        #    print ('Not Adding!')
 
     return
 
@@ -225,9 +241,10 @@ def pushToAGOL():
     query_cursor.close()
     query_conn.close()
 
-    edit_token = get_token()
-
     for row in dataDB:
+
+        edit_token = get_token()
+
         FS_service = service_URL + 'query/?token={}'.format(edit_token)
 
         where_statement = 'ID1=\'{}\''.format(row[6])
@@ -255,25 +272,43 @@ def pushToAGOL():
             response = urllib.request.urlopen(req,data=data)
             response_payload = response.read()
             response_payload = json.loads(response_payload)
+            #print (response_payload)
             for oid_item in response_payload['features']:
                 objectID = oid_item['attributes']['OBJECTID']
 
         if item_count > 0:
-            upload_payload = [{
-                    'geometry' : {'x' : row[8], 'y' : row[9]},
-                    'attributes' : {
-                        'OBJECTID': objectID,
-                        'APOwner' : row[0],
-                        'Street' : row[1],
-                        'City': row[2],
-                        'Zip': int(row[3]),
-                        'LocationType': row[4],
-                        'SSID': row[5],
-                        'ID1': row[6],
-                        'ID2': row[7],
-                        'Reserved' : 'No'
-                    }
-                    }]
+            if row[7] in Reserved:
+                upload_payload = [{
+                        'geometry' : {'x' : row[8], 'y' : row[9]},
+                        'attributes' : {
+                            'OBJECTID': objectID,
+                            'APOwner' : row[0],
+                            'Street' : row[1],
+                            'City': row[2],
+                            'Zip': int(row[3]),
+                            'LocationType': row[4],
+                            'SSID': row[5],
+                            'ID1': row[6],
+                            'ID2': row[7],
+                            'Reserved' : 'Yes'
+                        }
+                        }]
+            else:
+                upload_payload = [{
+                        'geometry' : {'x' : row[8], 'y' : row[9]},
+                        'attributes' : {
+                            'OBJECTID': objectID,
+                            'APOwner' : row[0],
+                            'Street' : row[1],
+                            'City': row[2],
+                            'Zip': int(row[3]),
+                            'LocationType': row[4],
+                            'SSID': row[5],
+                            'ID1': row[6],
+                            'ID2': row[7],
+                            'Reserved' : 'No'
+                        }
+                        }]
             if initial_load == 0:
                 update_AGOL(upload_payload, edit_token, where_statement)
                 count += 1
@@ -281,20 +316,36 @@ def pushToAGOL():
             else:
                 print ('    ---Initial Upload bypass!---')
         else:
-            upload_payload = [{
-                    'geometry' : {'x' : row[8], 'y' : row[9]},
-                    'attributes' : {
-                        'APOwner' : row[0],
-                        'Street' : row[1],
-                        'City': row[2],
-                        'Zip': int(row[3]),
-                        'LocationType': row[4],
-                        'SSID': row[5],
-                        'ID1': row[6],
-                        'ID2': row[7],
-                        'Reserved' : 'No'
-                    }
-                    }]
+            if row[7] in Reserved:
+                upload_payload = [{
+                        'geometry' : {'x' : row[8], 'y' : row[9]},
+                        'attributes' : {
+                            'APOwner' : row[0],
+                            'Street' : row[1],
+                            'City': row[2],
+                            'Zip': int(row[3]),
+                            'LocationType': row[4],
+                            'SSID': row[5],
+                            'ID1': row[6],
+                            'ID2': row[7],
+                            'Reserved' : 'Yes'
+                        }
+                        }]
+            else:
+                upload_payload = [{
+                        'geometry' : {'x' : row[8], 'y' : row[9]},
+                        'attributes' : {
+                            'APOwner' : row[0],
+                            'Street' : row[1],
+                            'City': row[2],
+                            'Zip': int(row[3]),
+                            'LocationType': row[4],
+                            'SSID': row[5],
+                            'ID1': row[6],
+                            'ID2': row[7],
+                            'Reserved' : 'No'
+                        }
+                        }]
             insert_AGOL(upload_payload, edit_token)
             count += 1
             print ('Inserted {}'.format(count))
@@ -329,6 +380,7 @@ def get_token():
     return (edit_token)
 
 def process_address(address):
+    print ('Processing Address #:  {}'.format(address))
     payload_json = get_Comcast(address)
     # Uncomment out if you want to use a direct to AGOL approach.  It's slower than mollasses.
     checkIn_DB(payload_json)
@@ -397,7 +449,7 @@ def aisle6Cleanup():
 
     dt = datetime.date.today()
     dt = dt - datetime.timedelta(days=1)
-    APOwner = 'City of YourName'
+    APOwner = 'Xfinity WiFi'
     #APOwner = ''
 
     print ('\n\nPurging Prior to:  {}'.format(dt))
@@ -409,7 +461,7 @@ def aisle6Cleanup():
     if APOwner == '':
         where_statement = 'EditDate < \'{} 00:00:01\' '''.format(dt, APOwner)
     else:
-        where_statement = 'EditDate < \'{} 00:00:01\' and APOwner <> \'{}\' '''.format(dt, APOwner)
+        where_statement = 'EditDate < \'{} 00:00:01\' and APOwner = \'{}\' '''.format(dt, APOwner)
     data = urllib.parse.urlencode({'f': 'json', 'where': where_statement}).encode('utf-8')
 
     req = urllib.request.Request(FS_service)
@@ -430,13 +482,12 @@ def aisle6Cleanup():
 
 prepareTable()
 
-# Update this string to set for your address repository.  The case below uses the parcel data as the MSAG.
-# I searched for specifically Street and added on later in the script "Bellevue" to get it closer.  Not always
-# a perfect fit.  distinct(ParcelAddress)
+ #Update this string to set for your address repository.  The case below uses the parcel data as the MSAG.
+ #I searched for specifically Street and added on later in the script "Bellevue" to get it closer.  Not always
+ #a perfect fit.  distinct(COBParcelAddress)
 
-query_string = ('''SELECT distinct(ParcelAddress)
-                FROM [LIS].[MVS_PARCEL_ADDRESS]
-                where ParcelAddress is not NULL and ParcelAddress <> \'N/A\' order by ParcelAddress desc''')
+query_string = ('''SELECT address
+                FROM [dbo].[Humbolt]''')
 query_conn = pyodbc.connect(conn_params)
 query_cursor = query_conn.cursor()
 query_cursor.execute(query_string)
@@ -449,10 +500,11 @@ re_count = 1
 city_search = []
 for row in data:
     target = row[0]
-    target = '{}, {}'.format(target, city_add)
+    #target = '{}, {}'.format(target, city_add)
+    target = '{}'.format(target)
     city_search.append(target)
 
-with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+with concurrent.futures.ThreadPoolExecutor(max_workers=None) as executor:
     executor.map(process_address, city_search)
 
 pushToAGOL()
