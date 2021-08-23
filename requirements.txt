@@ -33,7 +33,7 @@ jsonschema==3.2.0
 jupyter-client==5.3.1
 jupyter-console==6.1.0
 jupyter-core==4.5.0
-jupyterlab==1.1.4
+jupyterlab==1.2.21
 jupyterlab-server==1.1.0
 keyring==19.0.2
 kiwisolver==1.1.0
